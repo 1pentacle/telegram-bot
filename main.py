@@ -1,13 +1,15 @@
 from flask import Flask, request
 from telebot import TeleBot, types
-import os
+import threading
+import time
 
 TOKEN = '7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ'
 bot = TeleBot(TOKEN)
 app = Flask(__name__)
-user_state = {}
 
-# Клавиатура "назад"
+user_state = {}
+registered_users = set()  # множество для подтверждённых user_id
+
 def get_back_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(types.KeyboardButton('↩️ Назад'))
@@ -15,6 +17,7 @@ def get_back_keyboard():
 
 def step_start(message):
     user_state[message.chat.id] = 'start'
+
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(
         text='🖥️ Регистрация',
@@ -27,8 +30,15 @@ def step_start(message):
 
     text = (
         'Привет! 👋\n\n'
-        '📲 Чтобы получить доступ к приватному каналу, тебе необходимо стать моим партнёром...'
+        '📲Чтобы получить доступ к приватному каналу, тебе необходимо стать моим партнёром на Pocket Option и пройти регистрацию. '
+        'Чтобы бот успешно проверил регистрацию, нужно соблюсти важные условия:\n\n'
+        '1️⃣ Аккаунт обязательно должен быть **НОВЫМ**! Если у вас уже есть аккаунт и при нажатии на кнопку "РЕГИСТРАЦИЯ" '
+        'вы попадаете на старый, необходимо выйти с него и заново нажать на кнопку "РЕГИСТРАЦИЯ", после чего по новой зарегистрироваться!\n\n'
+        '2️⃣ Чтобы бот смог проверить вашу регистрацию, обязательно нужно ввести промокод **DEV906** при регистрации! '
+        'Он также дополнительно даёт +60% к пополнению!\n\n'
+        'После РЕГИСТРАЦИИ бот автоматически переведёт вас к следующему шагу ✅'
     )
+
     bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='Markdown')
 
 def step_enter_id(message):
@@ -38,6 +48,21 @@ def step_enter_id(message):
         '✅ Введите ID (только цифры):',
         reply_markup=get_back_keyboard()
     )
+
+@app.route('/postback', methods=['GET'])
+def postback():
+    # Принимаем параметры из GET-запроса
+    args = request.args
+    user_id = args.get('user_id') or args.get('affiliate_id')
+    status = args.get('status')
+
+    print(f"Postback received: user_id={user_id}, status={status}")
+
+    if user_id and status == 'approved':
+        registered_users.add(user_id)
+        return 'OK', 200
+    else:
+        return 'Invalid data', 400
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
@@ -62,27 +87,28 @@ def handle_text(message):
 
     if user_state.get(chat_id) == 'enter_id':
         if text.isdigit():
-            bot.send_message(chat_id, f'📩 Ваш ID "{text}" получен и отправлен на проверку!', reply_markup=get_back_keyboard())
+            if text in registered_users:
+                bot.send_message(chat_id, f'✅ Ваш ID "{text}" подтверждён и вы зарегистрированы!', reply_markup=get_back_keyboard())
+            else:
+                bot.send_message(chat_id, '❗ Ошибка❗ Некорректный ввод ID или регистрация не подтверждена.', reply_markup=get_back_keyboard())
         else:
             bot.send_message(chat_id, '❗ Введите только цифры.', reply_markup=get_back_keyboard())
         return
 
     bot.send_message(chat_id, '❗ Некорректная команда 🙁', reply_markup=get_back_keyboard())
 
-# Обработка Webhook Telegram
-@app.route(f"/bot{TOKEN}", methods=['POST'])
-def webhook():
-    json_string = request.get_data().decode('utf-8')
-    update = types.Update.de_json(json_string)
-    bot.process_new_updates([update])
-    return 'ok', 200
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
 
-@app.route('/')
-def index():
-    return 'Бот работает!', 200
+def run_bot():
+    while True:
+        try:
+            bot.polling(none_stop=True)
+        except Exception as e:
+            print(f"Bot polling error: {e}")
+            time.sleep(5)
 
-# Установка Webhook при запуске
-if __name__ == "__main__":
-    bot.remove_webhook()
-    bot.set_webhook(url=f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}/bot{TOKEN}")
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    # Запускаем Flask и бота параллельно
+    threading.Thread(target=run_flask).start()
+    run_bot()
