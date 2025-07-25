@@ -11,21 +11,19 @@ user_state = {}  # Храним состояние пользователя (в 
 
 # 📍 Кнопка "Регистрация", "Я зарегистрировался" и новая "Что такое OptiX?"
 def get_start_keyboard():
-    markup = types.InlineKeyboardMarkup(row_width=3)
-    markup.add(
-        types.InlineKeyboardButton(
-            text='🖥️ Регистрация',
-            url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Замени ссылку!
-        ),
-        types.InlineKeyboardButton(
-            text='✅ Я зарегистрировался',
-            callback_data='registered'
-        ),
-        types.InlineKeyboardButton(
-            text='🤖 Что такое OptiX?',
-            callback_data='optix_info'
-        )
-    )
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        text='🖥️ Регистрация',
+        url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Замени ссылку!
+    ))
+    markup.add(types.InlineKeyboardButton(
+        text='✅ Я зарегистрировался',
+        callback_data='registered'
+    ))
+    markup.add(types.InlineKeyboardButton(
+        text='🤖 Что такое OptiX?',
+        callback_data='optix_info'
+    ))
     return markup
 
 # 📍 Кнопка "Назад"
