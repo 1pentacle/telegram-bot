@@ -1,16 +1,47 @@
-mport os
+import os
+import sqlite3
 from flask import Flask, request
 from telebot import TeleBot, types
-import requests  # Для проверки ID на Pocket Option (пример)
+import requests
 
-TOKEN = os.getenv('TOKEN')  # В Render настрой переменную окружения TOKEN
-WEBHOOK_URL = f"https://telegram-bot-l2vg.onrender.com/{TOKEN}"  # Заменить yourdomain.com на свой домен Render
+TOKEN = '7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ'  # Токен
+YOUR_DOMAIN = 'https://telegram-bot-l2vg.onrender.com'  # Заменить на свой домен
+WEBHOOK_URL = f"https://{YOUR_DOMAIN}/{TOKEN}"
 
 bot = TeleBot(TOKEN)
 app = Flask(__name__)
 
-# Хранение состояния пользователя (простое, в памяти)
 user_state = {}
+
+# Инициализация БД и таблицы
+def init_db():
+    conn = sqlite3.connect('botdata.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            chat_id INTEGER PRIMARY KEY,
+            trader_id TEXT UNIQUE
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Сохраняем связь chat_id и trader_id
+def save_user(chat_id, trader_id):
+    conn = sqlite3.connect('botdata.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO users (chat_id, trader_id) VALUES (?, ?)', (chat_id, trader_id))
+    conn.commit()
+    conn.close()
+
+# Получаем chat_id по trader_id
+def get_chat_id_by_trader_id(trader_id):
+    conn = sqlite3.connect('botdata.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT chat_id FROM users WHERE trader_id = ?', (trader_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
 
 def get_start_keyboard():
     markup = types.InlineKeyboardMarkup()
@@ -48,19 +79,8 @@ def send_enter_id_message(chat_id):
     bot.send_message(chat_id, "✅ Введите ID (только цифры):", reply_markup=get_back_keyboard())
 
 def check_pocket_option_id(user_id):
-    # Здесь пример запроса к API Pocket Option — замени на реальный
-    # Возвращает True если ID валидный, иначе False
-
-    # Пример (замени URL и параметры):
-    try:
-        response = requests.get(f"https://affiliate.cntly.co/api/check_id?id={user_id}")
-        if response.status_code == 200:
-            data = response.json()
-            return data.get('valid', False)  # Предположим, что API возвращает {'valid': true/false}
-        else:
-            return False
-    except Exception:
-        return False
+    # Заглушка — просто проверяем, что это цифры и длина > 5
+    return user_id.isdigit() and len(user_id) > 5
 
 @app.route(f"/{TOKEN}", methods=['POST'])
 def webhook():
@@ -68,6 +88,24 @@ def webhook():
     update = types.Update.de_json(json_string)
     bot.process_new_updates([update])
     return '', 200
+
+# Обработка postback от Pocket Option
+@app.route('/postback', methods=['GET', 'POST'])
+def postback():
+    data = request.values
+    trader_id = data.get('trader_id')
+    reg = data.get('reg')
+    ftd = data.get('ftd')
+
+    if trader_id:
+        chat_id = get_chat_id_by_trader_id(trader_id)
+        if chat_id:
+            if reg == '1':
+                bot.send_message(chat_id, "✅ Поздравляем! Ваша регистрация подтверждена через партнёрку!")
+            if ftd == '1':
+                bot.send_message(chat_id, "💰 Поздравляем! Вы сделали первый депозит!")
+
+    return 'OK', 200
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
@@ -89,11 +127,11 @@ def handle_all_messages(message):
 
     if user_state.get(chat_id) == 'enter_id':
         if text.isdigit():
-            valid = check_pocket_option_id(text)
-            if valid:
-                bot.send_message(chat_id, f"✅ Ваш ID {text} успешно проверен и принят! Спасибо.", reply_markup=types.ReplyKeyboardRemove())
+            if check_pocket_option_id(text):
+                # Сохраняем соответствие chat_id <-> trader_id
+                save_user(chat_id, text)
+                bot.send_message(chat_id, f"✅ Ваш ID {text} успешно проверен и сохранён! Спасибо.", reply_markup=types.ReplyKeyboardRemove())
                 user_state[chat_id] = 'verified'
-                # Тут можно добавить логику для следующего шага
             else:
                 bot.send_message(chat_id, "❗ Ошибка❗ Некорректный ввод ID🙁 Попробуйте снова.", reply_markup=get_back_keyboard())
         else:
@@ -103,6 +141,7 @@ def handle_all_messages(message):
     bot.send_message(chat_id, "❗ Некорректная команда 🙁", reply_markup=get_back_keyboard())
 
 if __name__ == '__main__':
+    init_db()
     print(f"Запуск бота с webhook: {WEBHOOK_URL}")
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
