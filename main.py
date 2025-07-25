@@ -1,53 +1,20 @@
 import os
-import sqlite3
 from flask import Flask, request
 from telebot import TeleBot, types
-import requests
 
-TOKEN = '7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ'  # Токен
-YOUR_DOMAIN = 'telegram-bot-l2vg.onrender.com'  # Заменить на свой домен
-WEBHOOK_URL = f"https://{YOUR_DOMAIN}/{TOKEN}"
+TOKEN = os.getenv('TOKEN')  # В Render нужно указать переменную окружения TOKEN
+WEBHOOK_URL = f"https://telegram-bot-l2vg.onrender.com/{TOKEN}"  # Укажи свой Render-домен
 
 bot = TeleBot(TOKEN)
 app = Flask(__name__)
+user_state = {}  # Храним состояние пользователя (в памяти)
 
-user_state = {}
-
-# Инициализация БД и таблицы
-def init_db():
-    conn = sqlite3.connect('botdata.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            chat_id INTEGER PRIMARY KEY,
-            trader_id TEXT UNIQUE
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-# Сохраняем связь chat_id и trader_id
-def save_user(chat_id, trader_id):
-    conn = sqlite3.connect('botdata.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT OR REPLACE INTO users (chat_id, trader_id) VALUES (?, ?)', (chat_id, trader_id))
-    conn.commit()
-    conn.close()
-
-# Получаем chat_id по trader_id
-def get_chat_id_by_trader_id(trader_id):
-    conn = sqlite3.connect('botdata.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT chat_id FROM users WHERE trader_id = ?', (trader_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return row[0] if row else None
-
+# 📍 Кнопка "Регистрация" и "Я зарегистрировался"
 def get_start_keyboard():
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(
         text='🖥️ Регистрация',
-        url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Вставь свою ссылку
+        url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Замени ссылку!
     ))
     markup.add(types.InlineKeyboardButton(
         text='✅ Я зарегистрировался',
@@ -55,67 +22,71 @@ def get_start_keyboard():
     ))
     return markup
 
+# 📍 Кнопка "Назад"
 def get_back_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     keyboard.add(types.KeyboardButton('↩️ Назад'))
     return keyboard
 
+# 📍 Сообщение при старте
 def send_start_message(chat_id):
     user_state[chat_id] = 'start'
     text = (
         'Привет! 👋\n\n'
-        '📲Чтобы получить доступ к приватному каналу, тебе необходимо стать моим партнёром на Pocket Option и пройти регистрацию. '
-        'Чтобы бот успешно проверил регистрацию, нужно соблюсти важные условия:\n\n'
-        '1️⃣ Аккаунт обязательно должен быть **НОВЫМ**! Если у вас уже есть аккаунт и при нажатии на кнопку "РЕГИСТРАЦИЯ" '
-        'вы попадаете на старый, необходимо выйти с него и заново нажать на кнопку "РЕГИСТРАЦИЯ", после чего по новой зарегистрироваться!\n\n'
-        '2️⃣ Чтобы бот смог проверить вашу регистрацию, обязательно нужно ввести промокод **DEV906** при регистрации! '
-        'Он также дополнительно даёт +60% к пополнению!\n\n'
-        'После РЕГИСТРАЦИИ бот автоматически переведёт вас к следующему шагу ✅'
+        '📲 Чтобы получить доступ к приватному каналу, зарегистрируйся на Pocket Option по кнопке ниже. Важно:\n\n'
+        '1️⃣ Аккаунт должен быть *новым*.\n'
+        '2️⃣ При регистрации введи промокод **DEV906** — получишь +60% к пополнению!\n\n'
+        'После регистрации нажми кнопку "Я зарегистрировался" и отправь свой ID.'
     )
     bot.send_message(chat_id, text, reply_markup=get_start_keyboard(), parse_mode='Markdown')
 
+# 📍 Сообщение "Введите ID"
 def send_enter_id_message(chat_id):
     user_state[chat_id] = 'enter_id'
-    bot.send_message(chat_id, "✅ Введите ID (только цифры):", reply_markup=get_back_keyboard())
+    bot.send_message(chat_id, "✅ Введите свой ID (цифры):", reply_markup=get_back_keyboard())
 
+# 📍 Проверка ID из файла verified_ids.txt
 def check_pocket_option_id(user_id):
-    # Заглушка — просто проверяем, что это цифры и длина > 5
-    return user_id.isdigit() and len(user_id) > 5
+    try:
+        with open("verified_ids.txt", "r") as file:
+            ids = file.read().splitlines()
+        return user_id in ids
+    except FileNotFoundError:
+        return False
 
+# 📍 POST-запрос от Telegram (webhook)
 @app.route(f"/{TOKEN}", methods=['POST'])
-def webhook():
+def telegram_webhook():
     json_string = request.get_data().decode('utf-8')
     update = types.Update.de_json(json_string)
     bot.process_new_updates([update])
     return '', 200
 
-# Обработка postback от Pocket Option
-@app.route('/postback', methods=['GET', 'POST'])
+# 📍 POSTBACK от Pocket Option
+@app.route("/postback", methods=["GET", "POST"])
 def postback():
-    data = request.values
-    trader_id = data.get('trader_id')
-    reg = data.get('reg')
-    ftd = data.get('ftd')
+    data = request.args or request.form
+    trader_id = data.get("trader_id")
+    event = data.get("reg") or data.get("ftd") or data.get("dep")
 
-    if trader_id:
-        chat_id = get_chat_id_by_trader_id(trader_id)
-        if chat_id:
-            if reg == '1':
-                bot.send_message(chat_id, "✅ Поздравляем! Ваша регистрация подтверждена через партнёрку!")
-            if ftd == '1':
-                bot.send_message(chat_id, "💰 Поздравляем! Вы сделали первый депозит!")
+    if trader_id and event:
+        with open("verified_ids.txt", "a") as file:
+            file.write(trader_id + "\n")
+        return "OK", 200
+    return "Missing data", 400
 
-    return 'OK', 200
-
+# 📍 Команда /start
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     send_start_message(message.chat.id)
 
+# 📍 Обработка нажатия на "Я зарегистрировался"
 @bot.callback_query_handler(func=lambda call: call.data == 'registered')
 def handle_registered(call):
     bot.answer_callback_query(call.id)
     send_enter_id_message(call.message.chat.id)
 
+# 📍 Обработка всех сообщений
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     chat_id = message.chat.id
@@ -128,20 +99,19 @@ def handle_all_messages(message):
     if user_state.get(chat_id) == 'enter_id':
         if text.isdigit():
             if check_pocket_option_id(text):
-                # Сохраняем соответствие chat_id <-> trader_id
-                save_user(chat_id, text)
-                bot.send_message(chat_id, f"✅ Ваш ID {text} успешно проверен и сохранён! Спасибо.", reply_markup=types.ReplyKeyboardRemove())
+                bot.send_message(chat_id, f"✅ Ваш ID {text} подтверждён! Спасибо 🙌", reply_markup=types.ReplyKeyboardRemove())
                 user_state[chat_id] = 'verified'
+                # Здесь можно добавить ссылку на канал или следующий шаг
             else:
-                bot.send_message(chat_id, "❗ Ошибка❗ Некорректный ввод ID🙁 Попробуйте снова.", reply_markup=get_back_keyboard())
+                bot.send_message(chat_id, "❗ Ваш ID не найден. Убедитесь, что вы зарегистрировались по моей ссылке и подождите пару минут.", reply_markup=get_back_keyboard())
         else:
-            bot.send_message(chat_id, "❗ Пожалуйста, введите только цифры для ID.", reply_markup=get_back_keyboard())
+            bot.send_message(chat_id, "❗ Пожалуйста, введите только цифры.", reply_markup=get_back_keyboard())
         return
 
-    bot.send_message(chat_id, "❗ Некорректная команда 🙁", reply_markup=get_back_keyboard())
+    bot.send_message(chat_id, "❗ Я не понял команду. Нажми 'Назад'.", reply_markup=get_back_keyboard())
 
+# 📍 Запуск приложения
 if __name__ == '__main__':
-    init_db()
     print(f"Запуск бота с webhook: {WEBHOOK_URL}")
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
