@@ -5,7 +5,7 @@ from telebot import TeleBot, types
 import requests
 
 TOKEN = '7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ'  # Токен
-YOUR_DOMAIN = 'https://telegram-bot-l2vg.onrender.com'  # Заменить на свой домен
+YOUR_DOMAIN = 'telegram-bot-l2vg.onrender.com'  # Заменить на свой домен
 WEBHOOK_URL = f"https://{YOUR_DOMAIN}/{TOKEN}"
 
 bot = TeleBot(TOKEN)
