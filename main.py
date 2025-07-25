@@ -1,6 +1,13 @@
+import os
+from flask import Flask, request
 from telebot import TeleBot, types
 
-bot = TeleBot('7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ')
+TOKEN = '7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ'
+bot = TeleBot(TOKEN)
+app = Flask(__name__)
+
+WEBHOOK_URL_BASE = 'https://telegram-bot-l2vg.onrender.com'  # заменишь на свой URL
+WEBHOOK_URL_PATH = f'/bot{TOKEN}'
 
 user_state = {}
 
@@ -15,7 +22,7 @@ def step_start(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(
         text='🖥️ Регистрация',
-        url='https://pocketoption.com/ru/cabinet/registration?s=your_affiliate_link'
+        url='https://pocketoption.com/ru/?c=DEV906'
     ))
     markup.add(types.InlineKeyboardButton(
         text='✅ Я зарегистрировался',
@@ -74,11 +81,20 @@ def handle_text(message):
 
     bot.send_message(chat_id, '❗ Некорректная команда 🙁', reply_markup=get_back_keyboard())
 
+# ======== WEBHOOK PART =========
+
+@app.route(WEBHOOK_URL_PATH, methods=['POST'])
+def webhook():
+    json_str = request.get_data().decode('utf-8')
+    update = types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return '', 200
+
+# Установка вебхука при старте
+@app.before_first_request
+def setup_webhook():
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
+
 if __name__ == '__main__':
-    import time
-    while True:
-        try:
-            bot.polling(none_stop=True)
-        except Exception as e:
-            print(f'❌ Ошибка: {e}')
-            time.sleep(5)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
