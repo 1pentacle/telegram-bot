@@ -1,33 +1,36 @@
+mport os
 from flask import Flask, request
 from telebot import TeleBot, types
-import threading
-import time
+import requests  # Для проверки ID на Pocket Option (пример)
 
-TOKEN = '7561769200:AAEbeAAAZLFAoO7WrnQgYpZ3jz3lOfHYRjQ'
+TOKEN = os.getenv('TOKEN')  # В Render настрой переменную окружения TOKEN
+WEBHOOK_URL = f"https://telegram-bot-l2vg.onrender.com/{TOKEN}"  # Заменить yourdomain.com на свой домен Render
+
 bot = TeleBot(TOKEN)
 app = Flask(__name__)
 
+# Хранение состояния пользователя (простое, в памяти)
 user_state = {}
-registered_users = set()  # множество для подтверждённых user_id
 
-def get_back_keyboard():
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add(types.KeyboardButton('↩️ Назад'))
-    return keyboard
-
-def step_start(message):
-    user_state[message.chat.id] = 'start'
-
+def get_start_keyboard():
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(
         text='🖥️ Регистрация',
-        url='https://pocketoption.com/ru/cabinet/registration?s=your_affiliate_link'
+        url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Вставь свою ссылку
     ))
     markup.add(types.InlineKeyboardButton(
         text='✅ Я зарегистрировался',
         callback_data='registered'
     ))
+    return markup
 
+def get_back_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add(types.KeyboardButton('↩️ Назад'))
+    return keyboard
+
+def send_start_message(chat_id):
+    user_state[chat_id] = 'start'
     text = (
         'Привет! 👋\n\n'
         '📲Чтобы получить доступ к приватному каналу, тебе необходимо стать моим партнёром на Pocket Option и пройти регистрацию. '
@@ -38,77 +41,69 @@ def step_start(message):
         'Он также дополнительно даёт +60% к пополнению!\n\n'
         'После РЕГИСТРАЦИИ бот автоматически переведёт вас к следующему шагу ✅'
     )
+    bot.send_message(chat_id, text, reply_markup=get_start_keyboard(), parse_mode='Markdown')
 
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='Markdown')
+def send_enter_id_message(chat_id):
+    user_state[chat_id] = 'enter_id'
+    bot.send_message(chat_id, "✅ Введите ID (только цифры):", reply_markup=get_back_keyboard())
 
-def step_enter_id(message):
-    user_state[message.chat.id] = 'enter_id'
-    bot.send_message(
-        message.chat.id,
-        '✅ Введите ID (только цифры):',
-        reply_markup=get_back_keyboard()
-    )
+def check_pocket_option_id(user_id):
+    # Здесь пример запроса к API Pocket Option — замени на реальный
+    # Возвращает True если ID валидный, иначе False
 
-@app.route('/postback', methods=['GET'])
-def postback():
-    # Принимаем параметры из GET-запроса
-    args = request.args
-    user_id = args.get('user_id') or args.get('affiliate_id')
-    status = args.get('status')
+    # Пример (замени URL и параметры):
+    try:
+        response = requests.get(f"https://affiliate.cntly.co/api/check_id?id={user_id}")
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('valid', False)  # Предположим, что API возвращает {'valid': true/false}
+        else:
+            return False
+    except Exception:
+        return False
 
-    print(f"Postback received: user_id={user_id}, status={status}")
-
-    if user_id and status == 'approved':
-        registered_users.add(user_id)
-        return 'OK', 200
-    else:
-        return 'Invalid data', 400
+@app.route(f"/{TOKEN}", methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('utf-8')
+    update = types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return '', 200
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    step_start(message)
+    send_start_message(message.chat.id)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'registered')
-def handle_registered_callback(call):
+def handle_registered(call):
     bot.answer_callback_query(call.id)
-    step_enter_id(call.message)
+    send_enter_id_message(call.message.chat.id)
 
 @bot.message_handler(func=lambda message: True)
-def handle_text(message):
+def handle_all_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
 
     if text == '↩️ Назад':
-        if user_state.get(chat_id) == 'enter_id':
-            step_start(message)
-        else:
-            bot.send_message(chat_id, "Вы уже на начальном шаге 👇", reply_markup=get_back_keyboard())
+        send_start_message(chat_id)
         return
 
     if user_state.get(chat_id) == 'enter_id':
         if text.isdigit():
-            if text in registered_users:
-                bot.send_message(chat_id, f'✅ Ваш ID "{text}" подтверждён и вы зарегистрированы!', reply_markup=get_back_keyboard())
+            valid = check_pocket_option_id(text)
+            if valid:
+                bot.send_message(chat_id, f"✅ Ваш ID {text} успешно проверен и принят! Спасибо.", reply_markup=types.ReplyKeyboardRemove())
+                user_state[chat_id] = 'verified'
+                # Тут можно добавить логику для следующего шага
             else:
-                bot.send_message(chat_id, '❗ Ошибка❗ Некорректный ввод ID или регистрация не подтверждена.', reply_markup=get_back_keyboard())
+                bot.send_message(chat_id, "❗ Ошибка❗ Некорректный ввод ID🙁 Попробуйте снова.", reply_markup=get_back_keyboard())
         else:
-            bot.send_message(chat_id, '❗ Введите только цифры.', reply_markup=get_back_keyboard())
+            bot.send_message(chat_id, "❗ Пожалуйста, введите только цифры для ID.", reply_markup=get_back_keyboard())
         return
 
-    bot.send_message(chat_id, '❗ Некорректная команда 🙁', reply_markup=get_back_keyboard())
-
-def run_flask():
-    app.run(host="0.0.0.0", port=5000)
-
-def run_bot():
-    while True:
-        try:
-            bot.polling(none_stop=True)
-        except Exception as e:
-            print(f"Bot polling error: {e}")
-            time.sleep(5)
+    bot.send_message(chat_id, "❗ Некорректная команда 🙁", reply_markup=get_back_keyboard())
 
 if __name__ == '__main__':
-    # Запускаем Flask и бота параллельно
-    threading.Thread(target=run_flask).start()
-    run_bot()
+    print(f"Запуск бота с webhook: {WEBHOOK_URL}")
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
