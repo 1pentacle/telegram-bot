@@ -29,7 +29,7 @@ def get_back_keyboard():
     return keyboard
 
 # 📍 Сообщение при старте
-ddef send_start_message(chat_id):
+def send_start_message(chat_id):
     user_state[chat_id] = 'start'
     text = (
         "👋 Привет! Добро пожаловал в *OptiX* — твой путь к реальному доходу на трейдинге 💸\n\n"
