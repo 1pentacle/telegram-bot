@@ -9,17 +9,23 @@ bot = TeleBot(TOKEN)
 app = Flask(__name__)
 user_state = {}  # Храним состояние пользователя (в памяти)
 
-# 📍 Кнопка "Регистрация" и "Я зарегистрировался"
+# 📍 Кнопка "Регистрация", "Я зарегистрировался" и новая "Что такое OptiX?"
 def get_start_keyboard():
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(
-        text='🖥️ Регистрация',
-        url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Замени ссылку!
-    ))
-    markup.add(types.InlineKeyboardButton(
-        text='✅ Я зарегистрировался',
-        callback_data='registered'
-    ))
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.add(
+        types.InlineKeyboardButton(
+            text='🖥️ Регистрация',
+            url='https://u3.shortink.io/register?utm_campaign=823619&utm_source=affiliate&utm_medium=sr&a=gmURbwjR6oRBDh&ac=ttrade404&code=DEV906'  # Замени ссылку!
+        ),
+        types.InlineKeyboardButton(
+            text='✅ Я зарегистрировался',
+            callback_data='registered'
+        ),
+        types.InlineKeyboardButton(
+            text='🤖 Что такое OptiX?',
+            callback_data='optix_info'
+        )
+    )
     return markup
 
 # 📍 Кнопка "Назад"
@@ -32,7 +38,7 @@ def get_back_keyboard():
 def send_start_message(chat_id):
     user_state[chat_id] = 'start'
     text = (
-        "👋 Привет! Добро пожаловал в *OptiX* — твой путь к реальному доходу на трейдинге 💸\n\n"
+        "👋 Привет! Добро пожаловать в *OptiX* — твой путь к реальному доходу на трейдинге 💸\n\n"
         "Здесь нет воды и бесполезных прогнозов — только рабочие стратегии, чёткие сигналы и результат. "
         "Ты получишь доступ в приватный канал, где каждый день мы зарабатываем вместе 📊\n\n"
         "*Чтобы начать:*\n\n"
@@ -93,33 +99,8 @@ def handle_registered(call):
     bot.answer_callback_query(call.id)
     send_enter_id_message(call.message.chat.id)
 
-# 📍 Обработка всех сообщений
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    chat_id = message.chat.id
-    text = message.text.strip()
-
-    if text == '↩️ Назад':
-        send_start_message(chat_id)
-        return
-
-    if user_state.get(chat_id) == 'enter_id':
-        if text.isdigit():
-            if check_pocket_option_id(text):
-                bot.send_message(chat_id, f"✅ Ваш ID {text} подтверждён! Спасибо 🙌", reply_markup=types.ReplyKeyboardRemove())
-                user_state[chat_id] = 'verified'
-                # Здесь можно добавить ссылку на канал или следующий шаг
-            else:
-                bot.send_message(chat_id, "❗ Ваш ID не найден. Убедитесь, что вы зарегистрировались по моей ссылке и подождите пару минут.", reply_markup=get_back_keyboard())
-        else:
-            bot.send_message(chat_id, "❗ Пожалуйста, введите только цифры.", reply_markup=get_back_keyboard())
-        return
-
-    bot.send_message(chat_id, "❗ Я не понял команду. Нажми 'Назад'.", reply_markup=get_back_keyboard())
-
-# 📍 Запуск приложения
-if __name__ == '__main__':
-    print(f"Запуск бота с webhook: {WEBHOOK_URL}")
-    bot.remove_webhook()
-    bot.set_webhook(url=WEBHOOK_URL)
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# 📍 Обработка нажатия на кнопку "Что такое OptiX?"
+@bot.callback_query_handler(func=lambda call: call.data == 'optix_info')
+def handle_optix_info(call):
+    bot.answer_callback_query(call.id)
+    text
